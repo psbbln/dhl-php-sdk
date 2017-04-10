@@ -4,8 +4,8 @@
  * Authors-Website: http://petschko.org/
  * Date: 26.01.2017
  * Time: 15:37
- * Update: 20.03.2017
- * Version: 1.2.0
+ * Update: 10.04.2017
+ * Version: 1.3.0
  *
  * Notes: Contains all Functions/Values for DHL-Business-Shipment
  */
@@ -22,6 +22,7 @@ require_once('DHL_SendPerson.php');
 // Now all other classes
 require_once('DHL_BankData.php');
 require_once('DHL_Credentials.php');
+require_once('DHL_ExportDocPosition.php');
 require_once('DHL_ExportDocument.php');
 require_once('DHL_IdentCheck.php');
 require_once('DHL_Receiver.php');
@@ -481,14 +482,14 @@ class DHL_BusinessShipment extends DHL_Version {
 	/**
 	 * @return DHL_ExportDocument|null
 	 */
-	private function getExportDocument() { // Todo: Enable if implemented
+	public function getExportDocument() {
 		return $this->exportDocument;
 	}
 
 	/**
 	 * @param DHL_ExportDocument|null $exportDocument
 	 */
-	private function setExportDocument($exportDocument) { // Todo: Enable if implemented
+	public function setExportDocument($exportDocument) {
 		$this->exportDocument = $exportDocument;
 	}
 
@@ -795,8 +796,13 @@ class DHL_BusinessShipment extends DHL_Version {
 			$data->ShipmentOrder->Shipment->ReturnReceiver = $this->getReturnReceiver()->getClass_v2();
 
 		// Export-Document
-		if($this->getExportDocument() !== null)
-			$data->ShipmentOrder->Shipment->ExportDocument = $this->getExportDocument()->getExportDocumentClass_v2();
+		if($this->getExportDocument() !== null) {
+			try {
+				$data->ShipmentOrder->Shipment->ExportDocument = $this->getExportDocument()->getExportDocumentClass_v2();
+			} catch(Exception $e) {
+				$this->addError($e->getMessage());
+			}
+		}
 
 		// Other Settings
 		if($this->getPrintOnlyIfReceiverIsValid() !== null) {
@@ -961,6 +967,85 @@ class DHL_BusinessShipment extends DHL_Version {
 		$data->shipmentNumber = $shipmentNumber;
 		if($this->getLabelResponseType() !== null)
 			$data->labelResponseType = $this->getLabelResponseType();
+
+		return $data;
+	}
+
+	/**
+	 * Requests the Export-Document again via SOAP
+	 *
+	 * @param Object $data - Export-Doc-Data
+	 * @return Object - DHL-Response
+	 */
+	private function sendGetExportDocRequest($data) {
+		switch($this->getMayor()) {
+			case 1:
+				return $this->getSoapClient()->getExportDocDD($data);
+			case 2:
+			default:
+				return $this->getSoapClient()->getExportDoc($data);
+		}
+	}
+
+	/**
+	 * Requests a Export-Document again
+	 *
+	 * @param string $shipmentNumber - Shipment-Number of the Export-Document
+	 * @return bool|DHL_Response - Response or false on error
+	 */
+	public function getExportDoc($shipmentNumber) {
+		switch($this->getMayor()) {
+			case 1:
+				$data = $this->getExportDocClass_v1($shipmentNumber);
+				break;
+			case 2:
+			default:
+				$data = $this->getExportDocClass_v2($shipmentNumber);
+		}
+
+		try {
+			$response = $this->sendGetExportDocRequest($data);
+		} catch(Exception $e) {
+			$this->addError($e->getMessage());
+
+			return false;
+		}
+
+		if(is_soap_fault($response)) {
+			$this->addError($response->faultstring);
+
+			return false;
+		} else
+			return new DHL_Response($this->getVersion(), $response);
+	}
+
+	/**
+	 * Creates Data-Object for Export-Document-Request
+	 *
+	 * @param string $shipmentNumber - Number of the Shipment
+	 * @return StdClass - Data-Object
+	 */
+	private function getExportDocClass_v1($shipmentNumber) {
+		$data = new StdClass;
+
+		// todo
+
+		return $data;
+	}
+
+	/**
+	 * Creates Data-Object for Export-Document-Request
+	 *
+	 * @param string $shipmentNumber - Number of the Shipment
+	 * @return StdClass - Data-Object
+	 */
+	private function getExportDocClass_v2($shipmentNumber) {
+		$data = new StdClass;
+
+		$data->Version = $this->getVersionClass();
+		$data->shipmentNumber = $shipmentNumber;
+		if($this->getLabelResponseType() !== null)
+			$data->exportDocResponseType = $this->getLabelResponseType();
 
 		return $data;
 	}
